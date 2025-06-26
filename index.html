@@ -48,6 +48,7 @@
     let recording = false;
     const recordButton = document.getElementById("recordButton");
     const playAllButton = document.getElementById("playAllButton");
+    const newSessionButton = document.getElementById("newSessionButton");
     const tracksDiv = document.getElementById("tracks");
     const audioElements = [];
     const waveSurfers = [];
@@ -99,26 +100,29 @@
 
     recordButton.onclick = async () => {
       if (!recording) {
-        audioElements.forEach(audio => {
-          audio.currentTime = 0;
-          audio.play();
-        });
-        waveSurfers.forEach(ws => ws.seekTo(0));
-        waveSurfers.forEach(ws => ws.play());
-
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         chunks = [];
         recording = true;
-        mediaRecorder.start();
-        recordButton.textContent = "Stop Recording";
 
         mediaRecorder.ondataavailable = e => chunks.push(e.data);
-
         mediaRecorder.onstop = async () => {
           const blob = new Blob(chunks, { type: 'audio/webm' });
           await saveAndRenderTrack(blob);
         };
+
+        mediaRecorder.start();
+
+        requestAnimationFrame(() => {
+          audioElements.forEach(audio => {
+            audio.currentTime = 0;
+            audio.play();
+          });
+          waveSurfers.forEach(ws => ws.seekTo(0));
+          waveSurfers.forEach(ws => ws.play());
+        });
+
+        recordButton.textContent = "Stop Recording";
       } else {
         audioElements.forEach(audio => audio.pause());
         waveSurfers.forEach(ws => ws.pause());
@@ -137,6 +141,15 @@
         ws.seekTo(0);
         ws.play();
       });
+    };
+
+    newSessionButton.onclick = async () => {
+      if (confirm("Are you sure you want to delete all tracks?")) {
+        await db.tracks.clear();
+        audioElements.length = 0;
+        waveSurfers.length = 0;
+        tracksDiv.innerHTML = "";
+      }
     };
 
     const swBlob = new Blob([`
@@ -159,15 +172,6 @@
         err => console.error('SW registration failed:', err)
       );
     }
-
-    document.getElementById("newSessionButton").onclick = async () => {
-      if (confirm("Are you sure you want to delete all tracks?")) {
-        await db.tracks.clear();
-        audioElements.length = 0;
-        waveSurfers.length = 0;
-        tracksDiv.innerHTML = "";
-      }
-    };
 
     loadAllTracks();
   </script>
