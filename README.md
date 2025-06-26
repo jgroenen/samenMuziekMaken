@@ -1,6 +1,6 @@
 # SamenMuziekMaken
 
-Ik wil gewoon samen muziek maken. Daarom hier even een ideetje uitwerken.
+Ik wil gewoon samen muziek maken. Daarom hier even een ideetje uitwerken: https://www.jgroenen.nl/samenMuziekMaken/
 
 ## Huidige (demo) functionaliteit
 
