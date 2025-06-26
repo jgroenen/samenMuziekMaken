@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="theme-color" content="#000000"/>
+  <title>Solo Jam</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1rem;
+      background: #111;
+      color: #fff;
+    }
+    button {
+      padding: 1em;
+      margin: 0.5em 0.5em 1em 0;
+      font-size: 1rem;
+    }
+    .track {
+      margin-bottom: 1rem;
+    }
+    audio {
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎙️ Solo Jam</h1>
+  <button id="recordButton">Start Recording</button>
+  <button id="playAllButton">▶️ Play All</button>
+  <div id="tracks"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js"></script>
+  <script>
+    const db = new Dexie("SoloJamDB");
+    db.version(1).stores({ tracks: '++id, created, blob' });
+
+    let mediaRecorder;
+    let chunks = [];
+    let recording = false;
+    const recordButton = document.getElementById("recordButton");
+    const playAllButton = document.getElementById("playAllButton");
+    const tracksDiv = document.getElementById("tracks");
+    const audioElements = [];
+
+    async function addTrack(blob) {
+      const url = URL.createObjectURL(blob);
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = url;
+
+      const trackDiv = document.createElement("div");
+      trackDiv.className = "track";
+      trackDiv.appendChild(audio);
+
+      tracksDiv.appendChild(trackDiv);
+      audioElements.push(audio);
+
+      await db.tracks.add({ created: new Date(), blob });
+    }
+
+    async function loadAllTracks() {
+      const all = await db.tracks.toArray();
+      for (const { blob } of all) {
+        await addTrack(blob);
+      }
+    }
+
+    recordButton.onclick = async () => {
+      if (!recording) {
+        // Start all existing tracks
+        audioElements.forEach(audio => {
+          audio.currentTime = 0;
+          audio.play();
+        });
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        chunks = [];
+        recording = true;
+        mediaRecorder.start();
+        recordButton.textContent = "Stop Recording";
+
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          await addTrack(blob);
+        };
+      } else {
+        audioElements.forEach(audio => audio.pause());
+        mediaRecorder.stop();
+        recording = false;
+        recordButton.textContent = "Start Recording";
+      }
+    };
+
+    playAllButton.onclick = () => {
+      audioElements.forEach(audio => {
+        audio.currentTime = 0;
+        audio.play();
+      });
+    };
+
+    // Service worker inline (for offline support)
+    const swBlob = new Blob([`
+      const cacheName = 'solo-jam-v1';
+      const staticAssets = ['.'];
+
+      self.addEventListener('install', e => {
+        e.waitUntil(caches.open(cacheName).then(c => c.addAll(staticAssets)));
+      });
+
+      self.addEventListener('fetch', e => {
+        e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+      });
+    `], { type: 'application/javascript' });
+
+    const swUrl = URL.createObjectURL(swBlob);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register(swUrl).then(
+        () => console.log('SW registered'),
+        err => console.error('SW registration failed:', err)
+      );
+    }
+
+    // Load existing tracks
+    loadAllTracks();
+  </script>
+</body>
+</html>
