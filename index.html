@@ -18,10 +18,15 @@
       font-size: 1rem;
     }
     .track {
-      margin-bottom: 1rem;
+      margin-bottom: 2rem;
     }
     audio {
       width: 100%;
+    }
+    .waveform {
+      height: 80px;
+      background: #333;
+      margin-bottom: 0.5rem;
     }
   </style>
 </head>
@@ -29,9 +34,11 @@
   <h1>🎙️ Solo Jam</h1>
   <button id="recordButton">Start Recording</button>
   <button id="playAllButton">▶️ Play All</button>
+  <button id="newSessionButton">🗑️ New Session</button>
   <div id="tracks"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js"></script>
+  <script src="https://unpkg.com/wavesurfer.js"></script>
   <script>
     const db = new Dexie("SoloJamDB");
     db.version(1).stores({ tracks: '++id, created, blob' });
@@ -43,37 +50,61 @@
     const playAllButton = document.getElementById("playAllButton");
     const tracksDiv = document.getElementById("tracks");
     const audioElements = [];
+    const waveSurfers = [];
 
-    async function addTrack(blob) {
+    async function renderTrack(blob) {
       const url = URL.createObjectURL(blob);
-      const audio = document.createElement("audio");
-      audio.controls = true;
-      audio.src = url;
 
       const trackDiv = document.createElement("div");
       trackDiv.className = "track";
+
+      const waveformDiv = document.createElement("div");
+      waveformDiv.className = "waveform";
+      trackDiv.appendChild(waveformDiv);
+
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = url;
       trackDiv.appendChild(audio);
 
       tracksDiv.appendChild(trackDiv);
       audioElements.push(audio);
 
+      const wavesurfer = WaveSurfer.create({
+        container: waveformDiv,
+        waveColor: '#888',
+        progressColor: '#fff',
+        height: 80,
+        barWidth: 2,
+        responsive: true
+      });
+      wavesurfer.load(url);
+      waveSurfers.push(wavesurfer);
+    }
+
+    async function saveAndRenderTrack(blob) {
       await db.tracks.add({ created: new Date(), blob });
+      await renderTrack(blob);
     }
 
     async function loadAllTracks() {
+      audioElements.length = 0;
+      waveSurfers.length = 0;
+      tracksDiv.innerHTML = "";
       const all = await db.tracks.toArray();
       for (const { blob } of all) {
-        await addTrack(blob);
+        await renderTrack(blob);
       }
     }
 
     recordButton.onclick = async () => {
       if (!recording) {
-        // Start all existing tracks
         audioElements.forEach(audio => {
           audio.currentTime = 0;
           audio.play();
         });
+        waveSurfers.forEach(ws => ws.seekTo(0));
+        waveSurfers.forEach(ws => ws.play());
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
@@ -86,10 +117,11 @@
 
         mediaRecorder.onstop = async () => {
           const blob = new Blob(chunks, { type: 'audio/webm' });
-          await addTrack(blob);
+          await saveAndRenderTrack(blob);
         };
       } else {
         audioElements.forEach(audio => audio.pause());
+        waveSurfers.forEach(ws => ws.pause());
         mediaRecorder.stop();
         recording = false;
         recordButton.textContent = "Start Recording";
@@ -101,9 +133,12 @@
         audio.currentTime = 0;
         audio.play();
       });
+      waveSurfers.forEach(ws => {
+        ws.seekTo(0);
+        ws.play();
+      });
     };
 
-    // Service worker inline (for offline support)
     const swBlob = new Blob([`
       const cacheName = 'solo-jam-v1';
       const staticAssets = ['.'];
@@ -125,7 +160,15 @@
       );
     }
 
-    // Load existing tracks
+    document.getElementById("newSessionButton").onclick = async () => {
+      if (confirm("Are you sure you want to delete all tracks?")) {
+        await db.tracks.clear();
+        audioElements.length = 0;
+        waveSurfers.length = 0;
+        tracksDiv.innerHTML = "";
+      }
+    };
+
     loadAllTracks();
   </script>
 </body>
